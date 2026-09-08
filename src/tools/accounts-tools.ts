@@ -27,9 +27,9 @@ export function registerAccountTools(client: WaveClient) {
         if (!businessId) throw new Error('businessId required');
 
         const query = `
-          query GetAccounts($businessId: ID!, $page: Int!, $pageSize: Int!) {
+          query GetAccounts($businessId: ID!, $page: Int!, $pageSize: Int!, $types: [AccountTypeValue!], $isArchived: Boolean) {
             business(id: $businessId) {
-              accounts(page: $page, pageSize: $pageSize) {
+              accounts(page: $page, pageSize: $pageSize, types: $types, isArchived: $isArchived) {
                 pageInfo {
                   currentPage
                   totalPages
@@ -42,6 +42,7 @@ export function registerAccountTools(client: WaveClient) {
                     description
                     type {
                       name
+                      value
                       normalBalanceType
                     }
                     subtype {
@@ -64,20 +65,12 @@ export function registerAccountTools(client: WaveClient) {
           businessId,
           page: args.page || 1,
           pageSize: Math.min(args.pageSize || 100, 100),
+          types: args.type ? [args.type] : undefined,
+          isArchived: args.isArchived ?? false,
         });
 
-        let accounts = result.business.accounts.edges.map((e: any) => e.node);
-
-        if (args.type) {
-          accounts = accounts.filter((a: any) => a.type.name === args.type);
-        }
-
-        if (args.isArchived === false) {
-          accounts = accounts.filter((a: any) => !a.isArchived);
-        }
-
         return {
-          accounts,
+          accounts: result.business.accounts.edges.map((e: any) => e.node),
           pageInfo: result.business.accounts.pageInfo,
         };
       },
