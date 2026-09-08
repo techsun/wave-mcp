@@ -64,6 +64,13 @@ export class WaveMCPServer {
           '- wave_update_invoice: uses wrong mutation name (invoiceUpdate vs invoicePatch)',
           '- wave_get_invoice: queries nonexistent "id" field on InvoiceItemTax',
           '- wave_list_invoices: status/customerId filter params are exposed but not wired to the GraphQL query',
+          '',
+          'TRANSACTIONS: Wave\'s public API has no way to read/list transactions (no such field on',
+          'Business, Account, or Query) -- only creating them. wave_list_transactions, wave_get_transaction,',
+          'wave_update_transaction, wave_categorize_transaction, and wave_list_transaction_attachments have',
+          'been removed for this reason. wave_create_transaction uses the real moneyTransactionCreate',
+          'mutation: it needs an anchorAccountId (the bank/credit card account) + direction, and a',
+          'categorizeAccountId + balance (the sales/expense account line item).',
         ].join('\n'),
       }
     );

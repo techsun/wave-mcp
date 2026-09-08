@@ -1,12 +1,100 @@
 /**
  * Wave Transaction Tools
+ *
+ * Wave's public GraphQL API (https://gql.waveapps.com/graphql/public) has no way to
+ * read or list transactions: `Business`, `Account`, and the root `Query` type all lack
+ * any transaction field, and the `Transaction` type itself only exposes `id`. The only
+ * transaction operations that exist are the `moneyTransactionCreate`/`moneyTransactionsCreate`
+ * mutations. Confirmed against Wave's own docs (developer.waveapps.com) and a full schema
+ * introspection dated 2026-06-14.
+ *
+ * wave_list_transactions, wave_get_transaction, wave_update_transaction,
+ * wave_categorize_transaction, and wave_list_transaction_attachments were querying fields
+ * that don't exist and have been removed (kept commented out below in case Wave adds
+ * read support later). wave_create_transaction below has been fixed to call the real
+ * moneyTransactionCreate mutation with its actual input shape (an anchor account +
+ * balancing line items), instead of the nonexistent transactionCreate mutation it
+ * originally called.
  */
 
 import type { WaveClient } from '../client.js';
-import type { Transaction } from '../types/index.js';
 
 export function registerTransactionTools(client: WaveClient) {
   return {
+    wave_create_transaction: {
+      description: 'Create a money transaction: a withdrawal from or deposit to an anchor account (e.g. a bank or credit card account), categorized against one line item account (e.g. a sales or expense account)',
+      parameters: {
+        type: 'object',
+        properties: {
+          businessId: { type: 'string', description: 'Business ID' },
+          description: { type: 'string', description: 'Transaction description' },
+          date: { type: 'string', description: 'Transaction date (YYYY-MM-DD)' },
+          amount: { type: 'string', description: 'Transaction amount (positive Decimal string, e.g. "100.00")' },
+          anchorAccountId: { type: 'string', description: 'The Anchor Account (bank, credit card, or other real-world account) the money moves into or out of' },
+          direction: { type: 'string', enum: ['DEPOSIT', 'WITHDRAWAL'], description: 'DEPOSIT if the business received money into the anchor account, WITHDRAWAL if it spent money from it' },
+          categorizeAccountId: { type: 'string', description: 'The Categorization Account (e.g. sales, expenses) this transaction is recorded against' },
+          balance: { type: 'string', enum: ['INCREASE', 'DECREASE'], description: 'Whether this transaction increases or decreases the categorization account\'s balance' },
+          notes: { type: 'string', description: 'Optional notes' },
+          externalId: { type: 'string', description: 'Optional external reference ID; a random one is generated if omitted' },
+        },
+        required: ['description', 'date', 'amount', 'anchorAccountId', 'direction', 'categorizeAccountId', 'balance'],
+      },
+      handler: async (args: any) => {
+        const businessId = args.businessId || client.getBusinessId();
+        if (!businessId) throw new Error('businessId required');
+
+        const mutation = `
+          mutation CreateMoneyTransaction($input: MoneyTransactionCreateInput!) {
+            moneyTransactionCreate(input: $input) {
+              transaction {
+                id
+              }
+              didSucceed
+              inputErrors {
+                message
+                path
+                code
+              }
+            }
+          }
+        `;
+
+        const result = await client.mutate(mutation, {
+          input: {
+            businessId,
+            externalId: args.externalId || `wave-mcp-${Date.now()}`,
+            date: args.date,
+            description: args.description,
+            notes: args.notes,
+            anchor: {
+              accountId: args.anchorAccountId,
+              amount: args.amount,
+              direction: args.direction,
+            },
+            lineItems: [
+              {
+                accountId: args.categorizeAccountId,
+                amount: args.amount,
+                balance: args.balance,
+              },
+            ],
+          },
+        });
+
+        if (!result.moneyTransactionCreate.didSucceed) {
+          throw new Error(`Failed to create transaction: ${JSON.stringify(result.moneyTransactionCreate.inputErrors)}`);
+        }
+
+        return result.moneyTransactionCreate.transaction;
+      },
+    },
+
+    /* ---------------------------------------------------------------------
+     * The tools below query fields that don't exist in Wave's public API
+     * (see file header). Left here, inert, as a starting point in case Wave
+     * adds transaction read support in the future.
+     * ---------------------------------------------------------------------
+
     wave_list_transactions: {
       description: 'List transactions for a business with filtering options',
       parameters: {
@@ -69,7 +157,7 @@ export function registerTransactionTools(client: WaveClient) {
 
         // Client-side filtering
         if (args.accountId) {
-          transactions = transactions.filter((t: any) => 
+          transactions = transactions.filter((t: any) =>
             t.accountTransaction?.account?.id === args.accountId
           );
         }
@@ -135,68 +223,6 @@ export function registerTransactionTools(client: WaveClient) {
         });
 
         return result.business.transaction;
-      },
-    },
-
-    wave_create_transaction: {
-      description: 'Create a new transaction',
-      parameters: {
-        type: 'object',
-        properties: {
-          businessId: { type: 'string', description: 'Business ID' },
-          description: { type: 'string', description: 'Transaction description' },
-          date: { type: 'string', description: 'Transaction date (YYYY-MM-DD)' },
-          amount: { type: 'string', description: 'Transaction amount' },
-          accountId: { type: 'string', description: 'Account ID for categorization' },
-        },
-        required: ['description', 'date', 'amount', 'accountId'],
-      },
-      handler: async (args: any) => {
-        const businessId = args.businessId || client.getBusinessId();
-        if (!businessId) throw new Error('businessId required');
-
-        const mutation = `
-          mutation CreateTransaction($input: TransactionCreateInput!) {
-            transactionCreate(input: $input) {
-              transaction {
-                id
-                description
-                amount {
-                  value
-                  currency { code }
-                }
-                date
-                accountTransaction {
-                  account {
-                    id
-                    name
-                  }
-                }
-              }
-              didSucceed
-              inputErrors {
-                message
-                path
-              }
-            }
-          }
-        `;
-
-        const result = await client.mutate(mutation, {
-          input: {
-            businessId,
-            description: args.description,
-            date: args.date,
-            amount: args.amount,
-            accountId: args.accountId,
-          },
-        });
-
-        if (!result.transactionCreate.didSucceed) {
-          throw new Error(`Failed to create transaction: ${JSON.stringify(result.transactionCreate.inputErrors)}`);
-        }
-
-        return result.transactionCreate.transaction;
       },
     },
 
@@ -343,5 +369,7 @@ export function registerTransactionTools(client: WaveClient) {
         return result.business.transaction.attachments;
       },
     },
+
+    --------------------------------------------------------------------- */
   };
 }
