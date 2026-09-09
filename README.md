@@ -130,4 +130,4 @@ npx tsc --noEmit  # Type-check without emitting
 
 ## License
 
-MIT
+[MIT](LICENSE.md)
