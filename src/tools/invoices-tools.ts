@@ -153,6 +153,77 @@ export function registerInvoiceTools(client: WaveClient) {
       },
     },
 
+    wave_get_invoices_batch: {
+      description: 'Get detailed information (including line items) for up to 50 invoices in a single request, via GraphQL field aliasing. Much more efficient than repeated wave_get_invoice calls when pulling line items across many invoices.',
+      parameters: {
+        type: 'object',
+        properties: {
+          businessId: { type: 'string', description: 'Business ID' },
+          invoiceIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Invoice IDs to fetch (max 50 per call)',
+          },
+        },
+        required: ['invoiceIds'],
+      },
+      handler: async (args: any) => {
+        const businessId = args.businessId || client.getBusinessId();
+        if (!businessId) throw new Error('businessId required');
+
+        const invoiceIds: string[] = args.invoiceIds;
+        if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+          throw new Error('invoiceIds must be a non-empty array');
+        }
+        if (invoiceIds.length > 50) {
+          throw new Error('invoiceIds exceeds the 50-per-call limit; split into multiple calls');
+        }
+
+        const itemFields = `
+          description
+          quantity
+          price
+          subtotal { value }
+          total { value }
+          product { id name }
+          taxes { rate }
+        `;
+
+        const aliasFields = invoiceIds
+          .map((_, i) => `
+            inv${i}: invoice(id: $id${i}) {
+              id
+              invoiceNumber
+              status
+              invoiceDate
+              dueDate
+              customer { id name email }
+              items { ${itemFields} }
+              total { value currency { code } }
+            }
+          `)
+          .join('\n');
+
+        const idVarDecls = invoiceIds.map((_, i) => `$id${i}: ID!`).join(', ');
+
+        const query = `
+          query GetInvoicesBatch($businessId: ID!, ${idVarDecls}) {
+            business(id: $businessId) {
+              ${aliasFields}
+            }
+          }
+        `;
+
+        const variables: Record<string, string> = { businessId };
+        invoiceIds.forEach((id, i) => {
+          variables[`id${i}`] = id;
+        });
+
+        const result = await client.query(query, variables);
+        return invoiceIds.map((id, i) => result.business[`inv${i}`]);
+      },
+    },
+
     wave_create_invoice: {
       description: 'Create a new invoice',
       parameters: {
