@@ -113,7 +113,7 @@ export function registerInvoiceTools(client: WaveClient) {
                 items {
                   description
                   quantity
-                  unitPrice
+                  price
                   subtotal { value }
                   total { value }
                   product {
@@ -121,8 +121,6 @@ export function registerInvoiceTools(client: WaveClient) {
                     name
                   }
                   taxes {
-                    id
-                    name
                     rate
                   }
                 }

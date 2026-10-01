@@ -62,7 +62,6 @@ export class WaveMCPServer {
           '- wave_get_current_business: invalid fields, causes "Invalid query"',
           '- wave_create_product: passes isSold/isBought which are not on ProductCreateInput',
           '- wave_update_invoice: uses wrong mutation name (invoiceUpdate vs invoicePatch)',
-          '- wave_get_invoice: queries nonexistent "id" field on InvoiceItemTax',
           '- wave_list_invoices: status/customerId filter params are exposed but not wired to the GraphQL query',
           '',
           'TRANSACTIONS: Wave\'s public API has no way to read/list transactions (no such field on',
